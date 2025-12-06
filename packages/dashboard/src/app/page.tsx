@@ -16,51 +16,62 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function loadStats() {
-      const supabase = createClient();
+      try {
+        const supabase = createClient();
 
-      // Get current user's organization
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        // Get current user's organization
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-      if (!user) {
+        if (!user) {
+          setLoading(false);
+          return;
+        }
+
+        // Get organization (without joining subscription_tiers for now)
+        const { data: org, error: orgError } = await supabase
+          .from("organizations")
+          .select("*")
+          .eq("owner_user_id", user.id)
+          .maybeSingle();
+
+        if (orgError) {
+          console.error("Error fetching organization:", orgError);
+          setLoading(false);
+          return;
+        }
+
+        if (!org) {
+          setLoading(false);
+          return;
+        }
+
+        // Get current month's usage
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const { data: usage } = await supabase
+          .from("usage_daily")
+          .select("request_count, tokens_used")
+          .eq("organization_id", org.id)
+          .gte("date", startOfMonth.toISOString().split("T")[0]);
+
+        const totalRequests = usage?.reduce((sum, u) => sum + u.request_count, 0) || 0;
+        const monthlyLimit = 1000; // Default limit for now
+
+        setStats({
+          totalRequests,
+          remainingQuota: Math.max(0, monthlyLimit - totalRequests),
+          monthlyLimit,
+          recentRequests: usage?.slice(-7).reduce((sum, u) => sum + u.request_count, 0) || 0,
+        });
+      } catch (err) {
+        console.error("Error loading stats:", err);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      // Get organization
-      const { data: org } = await supabase
-        .from("organizations")
-        .select("*, subscription_tiers(*)")
-        .eq("owner_user_id", user.id)
-        .single();
-
-      if (!org) {
-        setLoading(false);
-        return;
-      }
-
-      // Get current month's usage
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      const { data: usage } = await supabase
-        .from("usage_daily")
-        .select("request_count, tokens_used")
-        .eq("organization_id", org.id)
-        .gte("date", startOfMonth.toISOString().split("T")[0]);
-
-      const totalRequests = usage?.reduce((sum, u) => sum + u.request_count, 0) || 0;
-      const monthlyLimit = org.subscription_tiers?.monthly_token_limit || 1000;
-
-      setStats({
-        totalRequests,
-        remainingQuota: Math.max(0, monthlyLimit - totalRequests),
-        monthlyLimit,
-        recentRequests: usage?.slice(-7).reduce((sum, u) => sum + u.request_count, 0) || 0,
-      });
-      setLoading(false);
     }
 
     loadStats();
