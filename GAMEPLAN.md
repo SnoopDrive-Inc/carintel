@@ -419,24 +419,33 @@ carintel config get api_key
 
 ### Rate Limiting Strategy
 
-Using sliding window with Supabase:
+Using Upstash Redis with sliding window algorithm for distributed rate limiting:
 
 ```typescript
-// In Edge Function
-async function checkRateLimit(apiKeyId: string, limit: number): Promise<boolean> {
-  const windowStart = new Date(Date.now() - 60000); // 1 minute ago
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
-  const { count } = await supabase
-    .from('usage_logs')
-    .select('id', { count: 'exact', head: true })
-    .eq('api_key_id', apiKeyId)
-    .gte('created_at', windowStart.toISOString());
+const redis = new Redis({
+  url: Deno.env.get('UPSTASH_REDIS_REST_URL'),
+  token: Deno.env.get('UPSTASH_REDIS_REST_TOKEN'),
+});
 
-  return count < limit;
-}
+const rateLimiter = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(limit, '1 m'),
+  prefix: 'carintel_ratelimit',
+});
+
+const { success, remaining, reset } = await rateLimiter.limit(organizationId);
 ```
 
-For high-volume, consider Upstash Redis for rate limiting.
+**Rate Limits by Tier:**
+| Tier | Requests/Minute |
+|------|-----------------|
+| Free | 10 |
+| Starter | 60 |
+| Pro | 300 |
+| Enterprise | 1000 |
 
 ### Stripe Integration
 
@@ -456,29 +465,187 @@ const STRIPE_PRICES = {
 
 ---
 
+## Documentation Strategy
+
+### OpenAPI Specification
+
+Auto-generate OpenAPI 3.0 spec from API implementation:
+
+```yaml
+openapi: 3.0.3
+info:
+  title: Car Intel API
+  version: 1.0.0
+  description: Vehicle data API for AI applications and automotive services
+servers:
+  - url: https://api.carintel.io/v1
+paths:
+  /vehicles/lookup:
+    get:
+      summary: Look up complete vehicle information
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: make
+          in: query
+          required: true
+          schema:
+            type: string
+        # ... etc
+```
+
+### Documentation Site (Scalar)
+
+Using [Scalar](https://scalar.com) for API documentation:
+
+- **Free & self-hosted** - Single HTML file or npm package
+- **Interactive API explorer** - Test endpoints directly
+- **Beautiful UI** - Modern, dark mode support
+- **OpenAPI native** - Auto-generates from spec
+
+```bash
+# Installation
+npm install @scalar/api-reference
+
+# Or use CDN
+<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+```
+
+Deploy as static site to Vercel/Netlify at `docs.carintel.io`.
+
+### Changelog Management (Release Please)
+
+Automated changelog generation from conventional commits:
+
+```yaml
+# .github/workflows/release-please.yml
+name: Release Please
+on:
+  push:
+    branches: [main]
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/release-please-action@v4
+        with:
+          release-type: node
+          package-name: "@carintel/api"
+```
+
+**Commit format:**
+- `feat: add VIN decoding endpoint` → Minor version bump
+- `fix: correct market value calculation` → Patch version bump
+- `feat!: change API response format` → Major version bump
+
+### Documentation Components
+
+1. **API Reference** (`docs.carintel.io`)
+   - OpenAPI-powered interactive docs
+   - Code samples in multiple languages
+   - Authentication guide
+
+2. **CHANGELOG.md**
+   - Auto-generated from commits
+   - Versioned release notes
+   - Breaking change alerts
+
+3. **Integration Guides**
+   - Quick start (5 minutes)
+   - MCP setup for Claude/Cursor
+   - SDK usage examples
+
+---
+
+## Customer Dashboard
+
+Simple Next.js portal for API key management and usage viewing:
+
+### Features
+
+1. **Authentication**
+   - Supabase Auth (email/password, OAuth)
+   - Organization management
+
+2. **API Key Management**
+   - Create/revoke API keys
+   - View key prefix and creation date
+   - Set key names/labels
+   - Copy full key (shown once)
+
+3. **Usage Dashboard**
+   - Current period usage vs limit
+   - Usage by endpoint breakdown
+   - Request history (recent 100)
+   - Rate limit status
+
+4. **Billing** (Phase 4)
+   - Current plan display
+   - Upgrade/downgrade via Stripe
+   - Invoice history
+
+### Tech Stack
+
+- **Framework**: Next.js 14 (App Router)
+- **Auth**: Supabase Auth
+- **Database**: Direct Supabase queries (RLS protected)
+- **Styling**: Tailwind CSS + shadcn/ui
+- **Charts**: Recharts for usage graphs
+- **Deployment**: Vercel
+
+### Routes
+
+```
+/                    → Dashboard (usage overview)
+/keys                → API key management
+/keys/new            → Create new key
+/usage               → Detailed usage analytics
+/settings            → Organization settings
+/billing             → Subscription management
+```
+
+---
+
 ## Implementation Phases
 
-### Phase 1: API Foundation (Week 1)
-- [ ] Create `organizations`, `api_keys`, `subscription_tiers` tables
-- [ ] Create `usage_logs`, `usage_daily` tables
-- [ ] Build Edge Function for API gateway with:
-  - API key validation
-  - Rate limiting
-  - Usage logging
-- [ ] Implement core endpoints:
-  - `GET /vehicles/lookup`
-  - `GET /vehicles/specs`
-  - `GET /makes`, `/makes/{make}/models`, etc.
-- [ ] Deploy to Supabase Edge Functions
+### Phase 1: API Foundation ✅
+- [x] Create `organizations`, `api_keys`, `subscription_tiers` tables
+- [x] Create `usage_logs`, `usage_daily` tables
+- [x] Build Edge Function for API gateway with:
+  - [x] API key validation
+  - [x] Rate limiting (Upstash Redis)
+  - [x] Usage logging
+- [x] Implement core endpoints:
+  - [x] `GET /vehicles/lookup`
+  - [x] `GET /vehicles/vin/:vin`
+  - [x] `GET /makes`, `/makes/{make}/models`, etc.
+- [x] Deploy to Supabase Edge Functions
 
-### Phase 2: MCP Server (Week 2)
-- [ ] Create `@carintel/mcp` package
-- [ ] Implement MCP tools calling API
-- [ ] Add stdio transport for local use
+### Phase 2: MCP Server ✅
+- [x] Create `@carintel/mcp` package
+- [x] Implement MCP tools calling API
+- [x] Add stdio transport for local use
 - [ ] Publish to npm
 - [ ] Write setup guide for Claude Desktop/Cursor
 
-### Phase 3: CLI (Week 2-3)
+### Phase 3: Documentation
+- [ ] Generate OpenAPI spec from current API
+- [ ] Create CHANGELOG.md
+- [ ] Set up Release Please GitHub Action
+- [ ] Deploy Scalar docs site at `docs.carintel.io`
+- [ ] Write quick start guide
+
+### Phase 4: Customer Dashboard
+- [ ] Set up Next.js project at `dashboard.carintel.io`
+- [ ] Implement Supabase Auth
+- [ ] Build API key management UI
+- [ ] Build usage dashboard with charts
+- [ ] Deploy to Vercel
+
+### Phase 5: CLI
 - [ ] Create `@carintel/cli` package
 - [ ] Implement OAuth login flow
 - [ ] Add key management commands
@@ -486,30 +653,29 @@ const STRIPE_PRICES = {
 - [ ] Add data query commands (lookup, market-value, etc.)
 - [ ] Publish to npm
 
-### Phase 4: Billing Integration (Week 3)
+### Phase 6: Billing Integration
 - [ ] Set up Stripe products and prices
 - [ ] Create Stripe checkout session endpoint
 - [ ] Implement webhook handlers
 - [ ] Build customer portal integration
 - [ ] Add overage billing logic
 
-### Phase 5: Blume Integration (Week 4)
+### Phase 7: Blume Integration
 - [ ] Create Blume organization and API key
-- [ ] Update Blume backend to use Vehicle Intelligence API
+- [ ] Update Blume backend to use Car Intel API
 - [ ] Remove internal vehicle_specs/warranty tables from Blume
 - [ ] Test and validate data parity
 
-### Phase 6: DriveClub AI Chatbot (Week 4-5)
+### Phase 8: DriveClub AI Chatbot
 - [ ] Set up OpenAI Agent Kit project
-- [ ] Configure Vehicle Intelligence as function calling tool
+- [ ] Configure Car Intel as function calling tool
 - [ ] Build conversation flows for vehicle queries
 - [ ] Deploy chatbot
 
-### Phase 7: Polish & Launch
-- [ ] Documentation site
-- [ ] Landing page
-- [ ] Proper domain (vehicleintel.io or similar)
+### Phase 9: Polish & Launch
+- [ ] Landing page at `carintel.io`
 - [ ] Marketing to automotive/AI developers
+- [ ] ProductHunt launch
 
 ---
 

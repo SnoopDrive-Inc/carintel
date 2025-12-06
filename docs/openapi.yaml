@@ -1,0 +1,911 @@
+openapi: 3.0.3
+info:
+  title: Car Intel API
+  version: 1.0.0
+  description: |
+    Comprehensive vehicle data API for AI applications and automotive services.
+
+    Car Intel provides structured vehicle information including specifications, warranties,
+    market values, and maintenance schedules for Year/Make/Model/Trim lookups and VIN decoding.
+
+    ## Authentication
+
+    All API requests require a Bearer token in the Authorization header:
+
+    ```
+    Authorization: Bearer ci_live_xxxxxxxxxxxxx
+    ```
+
+    API keys can be created in the [Customer Dashboard](https://dashboard.carintel.io).
+
+    ## Rate Limiting
+
+    Rate limits are enforced per organization based on subscription tier:
+
+    | Tier | Requests/Minute |
+    |------|-----------------|
+    | Free | 10 |
+    | Starter | 60 |
+    | Pro | 300 |
+    | Enterprise | 1000 |
+
+    When rate limited, you'll receive a `429 Too Many Requests` response with a `Retry-After` header.
+
+    ## Usage Tracking
+
+    Each API request consumes 1 token. Your remaining quota is returned in the `meta.tokens_remaining` field.
+
+servers:
+  - url: https://jxpbnnmefwtazfvoxvge.supabase.co/functions/v1/vehicles
+    description: Production server
+
+tags:
+  - name: Lookup
+    description: Vehicle lookup by YMMT or VIN
+  - name: Vehicle Data
+    description: Detailed vehicle data by ID
+  - name: Catalog
+    description: Browse available makes, models, and trims
+
+paths:
+  /lookup:
+    get:
+      tags:
+        - Lookup
+      summary: Look up complete vehicle information
+      description: |
+        Retrieves comprehensive vehicle data including specs, warranty, market values,
+        and maintenance schedule for a given Year/Make/Model/Trim combination.
+      operationId: lookupVehicle
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1900
+            maximum: 2030
+          example: 2024
+          description: Vehicle model year
+        - name: make
+          in: query
+          required: true
+          schema:
+            type: string
+          example: Toyota
+          description: Vehicle manufacturer
+        - name: model
+          in: query
+          required: true
+          schema:
+            type: string
+          example: Camry
+          description: Vehicle model name
+        - name: trim
+          in: query
+          required: false
+          schema:
+            type: string
+          example: XSE
+          description: Vehicle trim level (optional, improves match accuracy)
+      responses:
+        '200':
+          description: Vehicle data found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupResponse'
+        '400':
+          description: Invalid or missing parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized - Invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No vehicle data found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /vin/{vin}:
+    get:
+      tags:
+        - Lookup
+      summary: Decode VIN and get vehicle data
+      description: |
+        Decodes a VIN using NHTSA's database and returns matching Car Intel data
+        including specs, warranty, market values, and maintenance schedules.
+      operationId: lookupByVin
+      parameters:
+        - name: vin
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 17
+            maxLength: 17
+            pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+          example: 1HGBH41JXMN109186
+          description: 17-character Vehicle Identification Number
+      responses:
+        '200':
+          description: VIN decoded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VinLookupResponse'
+        '400':
+          description: Invalid VIN format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /decode/{vin}:
+    get:
+      tags:
+        - Lookup
+      summary: Decode VIN only (NHTSA data)
+      description: |
+        Decodes a VIN using NHTSA's database and returns basic vehicle information.
+        Does not include Car Intel database data (specs, market values, etc.).
+      operationId: decodeVin
+      parameters:
+        - name: vin
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 17
+            maxLength: 17
+            pattern: '^[A-HJ-NPR-Z0-9]{17}$'
+          example: 1HGBH41JXMN109186
+          description: 17-character Vehicle Identification Number
+      responses:
+        '200':
+          description: VIN decoded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VinDecodeResponse'
+        '400':
+          description: Invalid VIN format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /specs:
+    get:
+      tags:
+        - Vehicle Data
+      summary: Search vehicle specs
+      description: Search for vehicle specifications with optional filters.
+      operationId: searchSpecs
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+          description: Filter by model year
+        - name: make
+          in: query
+          schema:
+            type: string
+          description: Filter by manufacturer
+        - name: model
+          in: query
+          schema:
+            type: string
+          description: Filter by model name
+        - name: trim
+          in: query
+          schema:
+            type: string
+          description: Filter by trim level
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Maximum results to return
+      responses:
+        '200':
+          description: List of matching vehicle specs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpecsListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /{vehicleId}/specs:
+    get:
+      tags:
+        - Vehicle Data
+      summary: Get specs by vehicle ID
+      description: Retrieve detailed specifications for a specific vehicle.
+      operationId: getSpecsById
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Vehicle ID (UUID from vehicle_specs table)
+      responses:
+        '200':
+          description: Vehicle specs found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpecsResponse'
+        '404':
+          description: Vehicle not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /{vehicleId}/warranty:
+    get:
+      tags:
+        - Vehicle Data
+      summary: Get warranty information
+      description: Retrieve warranty coverage information for a specific vehicle.
+      operationId: getWarranty
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Vehicle ID (UUID from vehicle_specs table)
+      responses:
+        '200':
+          description: Warranty information found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarrantyResponse'
+        '404':
+          description: Vehicle or warranty not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /{vehicleId}/market-value:
+    get:
+      tags:
+        - Vehicle Data
+      summary: Get market value estimates
+      description: |
+        Retrieve market value estimates for a vehicle. Values include trade-in,
+        private party, and dealer retail prices by condition. Optionally adjust
+        for mileage.
+      operationId: getMarketValue
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Vehicle ID (UUID from vehicle_specs table)
+        - name: condition
+          in: query
+          schema:
+            type: string
+            enum:
+              - Outstanding
+              - Clean
+              - Average
+              - Rough
+          description: Filter by vehicle condition
+        - name: mileage
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Current odometer reading for value adjustment
+      responses:
+        '200':
+          description: Market values found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketValueResponse'
+        '404':
+          description: Vehicle not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /{vehicleId}/maintenance:
+    get:
+      tags:
+        - Vehicle Data
+      summary: Get maintenance schedule
+      description: |
+        Retrieve recommended maintenance schedule for a vehicle. Optionally
+        filter to show only upcoming services based on current mileage.
+      operationId: getMaintenance
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Vehicle ID (UUID from vehicle_specs table)
+        - name: current_mileage
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Current odometer reading to filter upcoming services
+      responses:
+        '200':
+          description: Maintenance schedule found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceResponse'
+        '404':
+          description: Vehicle not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /makes:
+    get:
+      tags:
+        - Catalog
+      summary: List all makes
+      description: Get a list of all vehicle manufacturers in the database.
+      operationId: listMakes
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+          description: Filter makes by model year availability
+      responses:
+        '200':
+          description: List of makes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MakesResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /makes/{make}/models:
+    get:
+      tags:
+        - Catalog
+      summary: List models for a make
+      description: Get a list of all models for a specific manufacturer.
+      operationId: listModels
+      parameters:
+        - name: make
+          in: path
+          required: true
+          schema:
+            type: string
+          example: Toyota
+          description: Vehicle manufacturer
+        - name: year
+          in: query
+          schema:
+            type: integer
+          description: Filter models by model year availability
+      responses:
+        '200':
+          description: List of models
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /makes/{make}/models/{model}/trims:
+    get:
+      tags:
+        - Catalog
+      summary: List trims for a model
+      description: Get a list of all trim levels for a specific make and model.
+      operationId: listTrims
+      parameters:
+        - name: make
+          in: path
+          required: true
+          schema:
+            type: string
+          example: Toyota
+          description: Vehicle manufacturer
+        - name: model
+          in: path
+          required: true
+          schema:
+            type: string
+          example: Camry
+          description: Vehicle model name
+        - name: year
+          in: query
+          schema:
+            type: integer
+          description: Filter trims by model year
+      responses:
+        '200':
+          description: List of trims
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrimsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        API key in the format `ci_live_xxxxx` or `ci_test_xxxxx`.
+        Obtain from [dashboard.carintel.io](https://dashboard.carintel.io).
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: invalid_params
+            message:
+              type: string
+              example: year, make, and model are required
+
+    Meta:
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        tokens_used:
+          type: integer
+          example: 1
+        tokens_remaining:
+          type: integer
+          example: 49999
+
+    VehicleSpecs:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        year:
+          type: integer
+          example: 2024
+        make:
+          type: string
+          example: Toyota
+        model:
+          type: string
+          example: Camry
+        trim:
+          type: string
+          example: XSE
+        msrp:
+          type: integer
+          description: MSRP in cents
+          example: 3549900
+        engine:
+          type: string
+          example: "2.5L 4-Cylinder"
+        transmission:
+          type: string
+          example: "8-Speed Automatic"
+        drivetrain:
+          type: string
+          example: FWD
+        fuel_type:
+          type: string
+          example: Gasoline
+        mpg_city:
+          type: integer
+          example: 28
+        mpg_highway:
+          type: integer
+          example: 39
+        seating_capacity:
+          type: integer
+          example: 5
+        body_style:
+          type: string
+          example: Sedan
+
+    Warranty:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        vehicle_spec_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          example: Basic
+        months:
+          type: integer
+          example: 36
+        miles:
+          type: integer
+          example: 36000
+
+    MarketValue:
+      type: object
+      properties:
+        condition:
+          type: string
+          enum:
+            - Outstanding
+            - Clean
+            - Average
+            - Rough
+        trade_in_cents:
+          type: integer
+          example: 2800000
+        private_party_cents:
+          type: integer
+          example: 3100000
+        dealer_retail_cents:
+          type: integer
+          example: 3400000
+
+    MaintenanceItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        year:
+          type: integer
+        make:
+          type: string
+        model:
+          type: string
+        trim:
+          type: string
+        mileage:
+          type: integer
+          example: 5000
+        service_items:
+          type: array
+          items:
+            type: string
+          example:
+            - "Oil and filter change"
+            - "Tire rotation"
+            - "Multi-point inspection"
+
+    VinInfo:
+      type: object
+      properties:
+        vin:
+          type: string
+          example: "1HGBH41JXMN109186"
+        year:
+          type: integer
+          example: 2024
+        make:
+          type: string
+          example: Honda
+        model:
+          type: string
+          example: Accord
+        trim:
+          type: string
+          nullable: true
+        body_type:
+          type: string
+          example: Sedan
+        vehicle_type:
+          type: string
+          example: Passenger Car
+        doors:
+          type: integer
+          example: 4
+        engine:
+          type: object
+          properties:
+            cylinders:
+              type: integer
+              example: 4
+            displacement:
+              type: string
+              example: "1.5"
+            horsepower:
+              type: integer
+              example: 192
+            fuel_type:
+              type: string
+              example: Gasoline
+        drivetrain:
+          type: string
+          example: FWD
+        transmission:
+          type: string
+          example: Automatic
+        manufacturer:
+          type: string
+          example: Honda
+        plant_country:
+          type: string
+          example: United States
+        plant_city:
+          type: string
+          nullable: true
+
+    LookupResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            specs:
+              $ref: '#/components/schemas/VehicleSpecs'
+            warranty:
+              type: array
+              items:
+                $ref: '#/components/schemas/Warranty'
+            market_values:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/MarketValue'
+            maintenance:
+              type: array
+              items:
+                $ref: '#/components/schemas/MaintenanceItem'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    VinLookupResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            vin_info:
+              $ref: '#/components/schemas/VinInfo'
+            specs:
+              $ref: '#/components/schemas/VehicleSpecs'
+            warranty:
+              type: array
+              items:
+                $ref: '#/components/schemas/Warranty'
+            market_values:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/MarketValue'
+            maintenance:
+              type: array
+              items:
+                $ref: '#/components/schemas/MaintenanceItem'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    VinDecodeResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/VinInfo'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    SpecsListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehicleSpecs'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    SpecsResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/VehicleSpecs'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    WarrantyResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Warranty'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    MarketValueResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/MarketValue'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    MaintenanceResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenanceItem'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    MakesResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+          example:
+            - Acura
+            - Audi
+            - BMW
+            - Chevrolet
+            - Ford
+            - Honda
+            - Toyota
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    ModelsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+          example:
+            - Camry
+            - Corolla
+            - RAV4
+            - Tacoma
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    TrimsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+          example:
+            - LE
+            - SE
+            - XLE
+            - XSE
+        meta:
+          $ref: '#/components/schemas/Meta'
