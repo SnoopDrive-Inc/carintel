@@ -31,6 +31,10 @@ export default function LoginPage() {
       if (error) {
         setError(error.message);
         setLoading(null);
+      } else if (data?.url) {
+        // Standard client returns URL to redirect to
+        console.log("[Login] Redirecting to:", data.url);
+        window.location.href = data.url;
       }
     } catch (err) {
       console.error("[Login] Exception:", err);
