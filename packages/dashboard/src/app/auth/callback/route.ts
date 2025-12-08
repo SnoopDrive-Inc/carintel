@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -10,38 +10,44 @@ export async function GET(request: Request) {
   console.log("[Auth Callback] Received request with code:", code ? "yes" : "no");
 
   if (code) {
-    const supabase = createClient(
+    const cookieStore = await cookies();
+
+    const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) => {
+                cookieStore.set(name, value, options);
+              });
+            } catch {
+              // The `setAll` method was called from a Server Component.
+              // This can be ignored if you have middleware refreshing sessions.
+            }
+          },
+        },
+      }
     );
 
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     console.log("[Auth Callback] Exchange result:", { hasSession: !!data.session, error });
 
-    if (!error && data.session) {
-      // Set auth cookies manually for the client
-      const cookieStore = await cookies();
+    if (!error) {
+      const forwardedHost = request.headers.get("x-forwarded-host");
+      const isLocalEnv = process.env.NODE_ENV === "development";
 
-      // Set access token cookie
-      cookieStore.set("sb-access-token", data.session.access_token, {
-        path: "/",
-        httpOnly: false,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: data.session.expires_in,
-      });
-
-      // Set refresh token cookie
-      cookieStore.set("sb-refresh-token", data.session.refresh_token, {
-        path: "/",
-        httpOnly: false,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 30, // 30 days
-      });
-
-      console.log("[Auth Callback] Session established, redirecting to:", `${origin}${next}`);
-      return NextResponse.redirect(`${origin}${next}`);
+      if (isLocalEnv) {
+        return NextResponse.redirect(`${origin}${next}`);
+      } else if (forwardedHost) {
+        return NextResponse.redirect(`https://${forwardedHost}${next}`);
+      } else {
+        return NextResponse.redirect(`${origin}${next}`);
+      }
     }
 
     console.log("[Auth Callback] Failed to exchange code:", error);

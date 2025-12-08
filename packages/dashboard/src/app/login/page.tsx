@@ -19,23 +19,20 @@ export default function LoginPage() {
       const redirectTo = `${window.location.origin}/auth/callback`;
       console.log("[Login] Redirect URL:", redirectTo);
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo,
         },
       });
 
-      console.log("[Login] OAuth result:", { data, error });
+      console.log("[Login] OAuth initiated, error:", error);
 
       if (error) {
         setError(error.message);
         setLoading(null);
-      } else if (data?.url) {
-        // Standard client returns URL to redirect to
-        console.log("[Login] Redirecting to:", data.url);
-        window.location.href = data.url;
       }
+      // Browser will be redirected by Supabase
     } catch (err) {
       console.error("[Login] Exception:", err);
       setError(String(err));
