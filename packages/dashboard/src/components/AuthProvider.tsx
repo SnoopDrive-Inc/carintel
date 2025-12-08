@@ -66,8 +66,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name: `${userName}'s Organization`,
           slug,
           owner_user_id: currentUser.id,
-          subscription_tier: "free",
-          subscription_status: "active",
         })
         .select("id")
         .single();
@@ -85,60 +83,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    console.log("[AuthProvider] useEffect starting");
-    let supabase;
-    try {
-      supabase = createClient();
-      console.log("[AuthProvider] Supabase client created");
-    } catch (err) {
-      console.error("[AuthProvider] Failed to create Supabase client:", err);
-      setLoading(false);
-      return;
-    }
+    console.log("[AuthProvider] useEffect starting, pathname:", pathname);
+    const supabase = createClient();
+    let initialCheckDone = false;
 
-    // Get initial session
-    console.log("[AuthProvider] Calling getSession...");
-    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
-      console.log("[AuthProvider] getSession returned:", { hasUser: !!session?.user, error });
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
-        const orgId = await ensureOrganization(session.user);
-        console.log("[AuthProvider] Got org ID:", orgId);
-        setOrganizationId(orgId);
-      }
-
-      setLoading(false);
-      console.log("[AuthProvider] Loading set to false");
-
-      // Redirect if not authenticated and not on public path
-      if (!session?.user && !publicPaths.includes(pathname)) {
-        router.push("/login");
-      }
-    }).catch((err) => {
-      console.error("[AuthProvider] Error getting session:", err);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
+    // Listen for auth changes - this is the primary way we get auth state
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null);
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("[AuthProvider] Auth state changed:", event, !!session?.user);
 
       if (session?.user) {
-        const orgId = await ensureOrganization(session.user);
-        setOrganizationId(orgId);
+        setUser(session.user);
+        // Don't block on organization fetch - do it async
+        ensureOrganization(session.user).then(orgId => {
+          setOrganizationId(orgId);
+        });
       } else {
+        setUser(null);
         setOrganizationId(null);
+        if (!publicPaths.includes(pathname) && initialCheckDone) {
+          router.push("/login");
+        }
       }
 
-      if (!session?.user && !publicPaths.includes(pathname)) {
-        router.push("/login");
-      }
+      // Always set loading to false after we get an auth event
+      setLoading(false);
+      initialCheckDone = true;
     });
 
-    return () => subscription.unsubscribe();
+    // Set a timeout to ensure we don't hang forever
+    const timeout = setTimeout(() => {
+      console.log("[AuthProvider] Timeout - setting loading to false");
+      setLoading(false);
+      initialCheckDone = true;
+    }, 3000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, [pathname, router]);
 
   async function signOut() {
