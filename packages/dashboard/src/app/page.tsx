@@ -16,33 +16,50 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function loadStats() {
+      console.log("[Dashboard] loadStats starting");
       try {
         const supabase = createClient();
 
         // Get current user's organization
+        console.log("[Dashboard] Getting user...");
         const {
           data: { user },
+          error: userError,
         } = await supabase.auth.getUser();
 
+        console.log("[Dashboard] getUser result:", { hasUser: !!user, error: userError });
+
         if (!user) {
+          console.log("[Dashboard] No user, setting loading false");
           setLoading(false);
           return;
         }
 
         // Get organization (without joining subscription_tiers for now)
-        const { data: org, error: orgError } = await supabase
-          .from("organizations")
-          .select("*")
+        console.log("[Dashboard] Getting organization for user:", user.id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: org, error: orgError } = await (supabase.from("organizations") as any)
+          .select("id")
           .eq("owner_user_id", user.id)
           .maybeSingle();
 
+        console.log("[Dashboard] Organization result:", { org, error: orgError });
+
         if (orgError) {
-          console.error("Error fetching organization:", orgError);
+          console.error("[Dashboard] Error fetching organization:", orgError);
           setLoading(false);
           return;
         }
 
         if (!org) {
+          console.log("[Dashboard] No organization found");
+          // Still show dashboard with zero stats
+          setStats({
+            totalRequests: 0,
+            remainingQuota: 1000,
+            monthlyLimit: 1000,
+            recentRequests: 0,
+          });
           setLoading(false);
           return;
         }
@@ -52,11 +69,14 @@ export default function DashboardPage() {
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);
 
+        console.log("[Dashboard] Getting usage data...");
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: usage } = await (supabase.from("usage_daily") as any)
+        const { data: usage, error: usageError } = await (supabase.from("usage_daily") as any)
           .select("request_count, tokens_used")
           .eq("organization_id", (org as { id: string }).id)
           .gte("date", startOfMonth.toISOString().split("T")[0]);
+
+        console.log("[Dashboard] Usage result:", { usage, error: usageError });
 
         const totalRequests = (usage as { request_count: number }[])?.reduce((sum, u) => sum + u.request_count, 0) || 0;
         const monthlyLimit = 1000; // Default limit for now
@@ -67,10 +87,12 @@ export default function DashboardPage() {
           monthlyLimit,
           recentRequests: (usage as { request_count: number }[])?.slice(-7).reduce((sum, u) => sum + u.request_count, 0) || 0,
         });
+        console.log("[Dashboard] Stats set successfully");
       } catch (err) {
-        console.error("Error loading stats:", err);
+        console.error("[Dashboard] Error loading stats:", err);
       } finally {
         setLoading(false);
+        console.log("[Dashboard] Loading set to false");
       }
     }
 
