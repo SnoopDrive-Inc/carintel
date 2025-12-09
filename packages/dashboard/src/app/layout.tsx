@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { AuthProvider } from "@/components/AuthProvider";
-import { AdminProvider } from "@/components/AdminProvider";
-import { Sidebar } from "@/components/Sidebar";
+import { ThemeProvider } from "@/components/providers/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
   title: "Car Intel Dashboard",
@@ -15,16 +14,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className="antialiased min-h-screen">
-        <AuthProvider>
-          <AdminProvider>
-            <div className="flex min-h-screen">
-              <Sidebar />
-              <main className="flex-1 p-8">{children}</main>
-            </div>
-          </AdminProvider>
-        </AuthProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   );
