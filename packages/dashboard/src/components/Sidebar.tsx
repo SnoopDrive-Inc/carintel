@@ -3,6 +3,7 @@
 import { useAuth } from "./AuthProvider";
 import { useAdmin } from "./AdminProvider";
 import { usePathname } from "next/navigation";
+import { OrganizationSwitcher } from "./OrganizationSwitcher";
 
 export function Sidebar() {
   const { user, signOut } = useAuth();
@@ -18,11 +19,14 @@ export function Sidebar() {
 
   return (
     <aside className={`w-64 border-r border-gray-800 p-4 flex flex-col ${isAdminPage ? "bg-purple-950/20" : ""}`}>
-      <div className="mb-8">
-        <h1 className="text-xl font-bold">Car Intel</h1>
-        <p className="text-sm text-gray-400">
-          {isAdminPage ? "Admin Panel" : "Dashboard"}
-        </p>
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <h1 className="text-xl font-bold">Car Intel</h1>
+          <span className="text-xs text-gray-500">
+            {isAdminPage ? "Admin" : "API"}
+          </span>
+        </div>
+        {!isAdminPage && <OrganizationSwitcher />}
       </div>
 
       {isAdminPage ? (
@@ -93,7 +97,7 @@ export function Sidebar() {
               pathname === "/" ? "bg-gray-800" : "hover:bg-gray-800"
             }`}
           >
-            Overview
+            Dashboard
           </a>
           <a
             href="/keys"
@@ -118,6 +122,14 @@ export function Sidebar() {
             }`}
           >
             Settings
+          </a>
+          <a
+            href="/billing"
+            className={`block px-4 py-2 rounded-lg transition ${
+              pathname === "/billing" ? "bg-gray-800" : "hover:bg-gray-800"
+            }`}
+          >
+            Billing
           </a>
 
           {isAdmin && (

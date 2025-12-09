@@ -1,21 +1,35 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase";
 import { usePathname, useRouter } from "next/navigation";
 
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  subscription_tier_id: string | null;
+  subscription_status: string | null;
+}
+
 interface AuthContextType {
   user: User | null;
   organizationId: string | null;
+  organizations: Organization[];
+  currentOrganization: Organization | null;
   loading: boolean;
+  switchOrganization: (orgId: string) => void;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   organizationId: null,
+  organizations: [],
+  currentOrganization: null,
   loading: true,
+  switchOrganization: () => {},
   signOut: async () => {},
 });
 
@@ -24,32 +38,63 @@ export function useAuth() {
 }
 
 const publicPaths = ["/login", "/auth/callback"];
+const ORG_STORAGE_KEY = "carintel_selected_org";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
 
-  async function ensureOrganization(currentUser: User): Promise<string | null> {
+  const currentOrganization = organizations.find(org => org.id === organizationId) || null;
+
+  const switchOrganization = useCallback((orgId: string) => {
+    const org = organizations.find(o => o.id === orgId);
+    if (org) {
+      setOrganizationId(orgId);
+      // Store selection in localStorage
+      if (typeof window !== "undefined") {
+        localStorage.setItem(ORG_STORAGE_KEY, orgId);
+      }
+    }
+  }, [organizations]);
+
+  async function fetchOrganizations(currentUser: User): Promise<{ orgs: Organization[], selectedId: string | null }> {
     try {
       const supabase = createClient();
 
-      // Check if user already has an organization
+      // Fetch all organizations owned by the user
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: existingOrg, error: fetchError } = await (supabase.from("organizations") as any)
-        .select("id")
+      const { data: existingOrgs, error: fetchError } = await (supabase.from("organizations") as any)
+        .select("id, name, slug, subscription_tier_id, subscription_status")
         .eq("owner_user_id", currentUser.id)
-        .maybeSingle();
+        .order("created_at", { ascending: true });
 
       if (fetchError) {
-        console.error("Error fetching organization:", fetchError);
-        return null;
+        console.error("Error fetching organizations:", fetchError);
+        return { orgs: [], selectedId: null };
       }
 
-      if (existingOrg) {
-        return (existingOrg as { id: string }).id;
+      if (existingOrgs && existingOrgs.length > 0) {
+        const orgs = existingOrgs as Organization[];
+
+        // Try to restore previously selected org from localStorage
+        let selectedId: string | null = null;
+        if (typeof window !== "undefined") {
+          const storedOrgId = localStorage.getItem(ORG_STORAGE_KEY);
+          if (storedOrgId && orgs.some(o => o.id === storedOrgId)) {
+            selectedId = storedOrgId;
+          }
+        }
+
+        // Default to first org if no stored selection
+        if (!selectedId) {
+          selectedId = orgs[0].id;
+        }
+
+        return { orgs, selectedId };
       }
 
       // Create a new organization for the user
@@ -67,18 +112,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           slug,
           owner_user_id: currentUser.id,
         })
-        .select("id")
+        .select("id, name, slug, subscription_tier_id, subscription_status")
         .single();
 
       if (insertError) {
         console.error("Error creating organization:", insertError);
-        return null;
+        return { orgs: [], selectedId: null };
       }
 
-      return (newOrg as { id: string }).id;
+      const org = newOrg as Organization;
+      return { orgs: [org], selectedId: org.id };
     } catch (err) {
-      console.error("Unexpected error in ensureOrganization:", err);
-      return null;
+      console.error("Unexpected error in fetchOrganizations:", err);
+      return { orgs: [], selectedId: null };
     }
   }
 
@@ -95,12 +141,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (session?.user) {
         setUser(session.user);
-        // Don't block on organization fetch - do it async
-        ensureOrganization(session.user).then(orgId => {
-          setOrganizationId(orgId);
+        // Fetch all organizations for the user
+        fetchOrganizations(session.user).then(({ orgs, selectedId }) => {
+          setOrganizations(orgs);
+          setOrganizationId(selectedId);
         });
       } else {
         setUser(null);
+        setOrganizations([]);
         setOrganizationId(null);
         if (!publicPaths.includes(pathname) && initialCheckDone) {
           router.push("/login");
@@ -128,12 +176,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
+    setOrganizations([]);
     setOrganizationId(null);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(ORG_STORAGE_KEY);
+    }
     router.push("/login");
   }
 
   return (
-    <AuthContext.Provider value={{ user, organizationId, loading, signOut }}>
+    <AuthContext.Provider value={{
+      user,
+      organizationId,
+      organizations,
+      currentOrganization,
+      loading,
+      switchOrganization,
+      signOut
+    }}>
       {children}
     </AuthContext.Provider>
   );
