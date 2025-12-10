@@ -143,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session.user);
         // Fetch all organizations for the user
         fetchOrganizations(session.user).then(({ orgs, selectedId }) => {
+          console.log("[AuthProvider] Fetched organizations:", orgs.length, "selected:", selectedId);
           setOrganizations(orgs);
           setOrganizationId(selectedId);
         });

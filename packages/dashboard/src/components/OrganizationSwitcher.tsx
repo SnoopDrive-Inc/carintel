@@ -39,9 +39,12 @@ function getTierLabel(tierId: string | null): string {
 }
 
 export function OrganizationSwitcher() {
-  const { currentOrganization, organizations, switchOrganization } = useAuth();
+  const { currentOrganization, organizations, switchOrganization, loading } = useAuth();
 
-  if (!currentOrganization) {
+  // Debug logging
+  console.log("[OrganizationSwitcher] loading:", loading, "organizations:", organizations.length, "current:", currentOrganization?.name);
+
+  if (loading || !currentOrganization) {
     return (
       <div className="flex items-center gap-3 px-2 py-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-muted">
