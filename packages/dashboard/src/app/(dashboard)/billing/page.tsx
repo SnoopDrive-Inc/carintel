@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
@@ -72,29 +72,32 @@ const ALL_TIERS = [
   },
 ];
 
-export default function BillingPage() {
-  const { user, organizationId } = useAuth();
+// Component to handle search params (must be wrapped in Suspense)
+function BillingSearchParamsHandler() {
   const searchParams = useSearchParams();
-  const [org, setOrg] = useState<Organization | null>(null);
-  const [tier, setTier] = useState<Tier | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
-  const [portalLoading, setPortalLoading] = useState(false);
-
-  // Check for success/canceled params from Stripe redirect
   const success = searchParams.get("success");
   const canceled = searchParams.get("canceled");
 
   useEffect(() => {
     if (success) {
       toast.success("Subscription updated successfully!");
-      // Clear the URL params
       window.history.replaceState({}, "", "/billing");
     } else if (canceled) {
       toast.info("Checkout canceled");
       window.history.replaceState({}, "", "/billing");
     }
   }, [success, canceled]);
+
+  return null;
+}
+
+export default function BillingPage() {
+  const { user, organizationId } = useAuth();
+  const [org, setOrg] = useState<Organization | null>(null);
+  const [tier, setTier] = useState<Tier | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   useEffect(() => {
     async function loadBillingInfo() {
@@ -239,6 +242,11 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-6">
+      {/* Handle search params from Stripe redirects */}
+      <Suspense fallback={null}>
+        <BillingSearchParamsHandler />
+      </Suspense>
+
       <div className="space-y-1">
         <h1 className="text-2xl font-bold tracking-tight">Billing</h1>
         <p className="text-muted-foreground">
