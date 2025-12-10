@@ -1,9 +1,20 @@
 import Stripe from "stripe";
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-11-17.clover",
-  typescript: true,
-});
+// Lazy initialization to avoid build-time errors when env vars aren't set
+let stripeClient: Stripe | null = null;
+
+export function getStripe(): Stripe {
+  if (!stripeClient) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error("STRIPE_SECRET_KEY environment variable is not set");
+    }
+    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2025-11-17.clover",
+      typescript: true,
+    });
+  }
+  return stripeClient;
+}
 
 // Map tier IDs to Stripe price IDs
 // These should be updated with your actual Stripe price IDs

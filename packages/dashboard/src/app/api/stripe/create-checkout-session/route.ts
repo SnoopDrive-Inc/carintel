@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { stripe, STRIPE_PRICE_IDS } from "@/lib/stripe";
+import { getStripe, STRIPE_PRICE_IDS } from "@/lib/stripe";
 
 // Create a Supabase client with service role for server-side operations
 const supabaseAdmin = createClient(
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
     if (!customerId) {
       // Create a new Stripe customer
-      const customer = await stripe.customers.create({
+      const customer = await getStripe().customers.create({
         email: org.billing_email || userEmail,
         name: org.name,
         metadata: {
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     }
 
     // Create checkout session
-    const session = await stripe.checkout.sessions.create({
+    const session = await getStripe().checkout.sessions.create({
       customer: customerId,
       mode: "subscription",
       payment_method_types: ["card"],

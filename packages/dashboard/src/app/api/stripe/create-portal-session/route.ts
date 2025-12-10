@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { stripe } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe";
 
 // Create a Supabase client with service role for server-side operations
 const supabaseAdmin = createClient(
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     }
 
     // Create a billing portal session
-    const session = await stripe.billingPortal.sessions.create({
+    const session = await getStripe().billingPortal.sessions.create({
       customer: org.stripe_customer_id,
       return_url: `${process.env.NEXT_PUBLIC_APP_URL}/billing`,
     });

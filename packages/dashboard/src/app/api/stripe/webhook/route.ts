@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
-import { stripe, getTierIdFromPriceId } from "@/lib/stripe";
+import { getStripe, getTierIdFromPriceId } from "@/lib/stripe";
 import Stripe from "stripe";
 
 // Create a Supabase client with service role for server-side operations
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   let event: Stripe.Event;
 
   try {
-    event = stripe.webhooks.constructEvent(
+    event = getStripe().webhooks.constructEvent(
       body,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
